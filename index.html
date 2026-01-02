@@ -96,7 +96,6 @@
         </div>
     </div>
 
-    <!-- SDKs -->
 <!-- SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -115,7 +114,7 @@
 			measurementId: "G-8LFTJM0REX"
         };
         const GEMINI_API_KEY = "AIzaSyADr8yWa5_Mgh7Omdvi9LCJ-9SRRq3DLPI"; 
-        const ADMIN_EMAIL = "fuwen@ppsh.ptc.edu.tw"; // TODO: 請確認這是您登入的 Email
+        const ADMIN_EMAIL = "fuwen@ppsh.ptc.edu.tw";
         // ===========================================
 
         const app = initializeApp(firebaseConfig);
@@ -127,228 +126,174 @@
         let currentUser = null;
         let fileContent = "";
 
-        // UI 元素
-        const loginBtn = document.getElementById('loginBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const adminBtn = document.getElementById('adminBtn');
-        const chatContainer = document.getElementById('chatContainer');
-        const statusLabel = document.getElementById('systemStatus');
-        const uploadStatus = document.getElementById('uploadStatus');
+        // UI Elements (等待 DOM 載入)
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginBtn = document.getElementById('loginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const adminBtn = document.getElementById('adminBtn');
+            const chatContainer = document.getElementById('chatContainer');
+            const statusLabel = document.getElementById('systemStatus');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const saveBtn = document.getElementById('saveKnowledgeBtn');
+            const fileInput = document.getElementById('fileInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const userInput = document.getElementById('userInput');
+            const adminModal = document.getElementById('adminModal');
+            const closeAdminBtn = document.getElementById('closeAdminBtn');
 
-        // 登入邏輯
-        loginBtn.addEventListener('click', () => signInWithPopup(auth, provider));
-        logoutBtn.addEventListener('click', () => signOut(auth));
-        
-        onAuthStateChanged(auth, (user) => {
-            currentUser = user;
-            if (user) {
-                console.log("已登入:", user.email); // Debug 用
-                loginBtn.classList.add('hidden');
-                logoutBtn.classList.remove('hidden');
-                // 寬鬆檢查：只要 Email 相符就顯示後台
-                if (user.email === ADMIN_EMAIL) {
-                    adminBtn.classList.remove('hidden');
+            // 登入邏輯
+            loginBtn.addEventListener('click', () => signInWithPopup(auth, provider));
+            logoutBtn.addEventListener('click', () => signOut(auth));
+            
+            onAuthStateChanged(auth, (user) => {
+                currentUser = user;
+                if (user) {
+                    loginBtn.classList.add('hidden');
+                    logoutBtn.classList.remove('hidden');
+                    if (user.email === ADMIN_EMAIL) adminBtn.classList.remove('hidden');
                 } else {
-                    console.warn(`登入 Email (${user.email}) 與管理員 (${ADMIN_EMAIL}) 不符，隱藏後台`);
+                    loginBtn.classList.remove('hidden');
+                    logoutBtn.classList.add('hidden');
+                    adminBtn.classList.add('hidden');
                 }
-            } else {
-                loginBtn.classList.remove('hidden');
-                logoutBtn.classList.add('hidden');
-                adminBtn.classList.add('hidden');
-            }
-        });
+            });
 
-        // 後台管理
-        const adminModal = document.getElementById('adminModal');
-        adminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
-        document.getElementById('closeAdminBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
+            // 後台管理
+            adminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
+            closeAdminBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
 
-        document.getElementById('fileInput').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const json = JSON.parse(e.target.result);
+                        fileContent = JSON.stringify(json);
+                        uploadStatus.textContent = `✅ JSON 格式正確 (${file.size} bytes)`;
+                        uploadStatus.className = "text-center text-sm font-medium text-green-600";
+                    } catch (err) {
+                        uploadStatus.textContent = `❌ JSON 錯誤: ${err.message}`;
+                        uploadStatus.className = "text-center text-sm font-medium text-red-500";
+                    }
+                };
+                reader.readAsText(file);
+            });
+
+            saveBtn.addEventListener('click', async () => {
+                if (!fileContent) return alert("請先選擇有效的 JSON 檔案");
+                saveBtn.disabled = true;
+                saveBtn.textContent = "寫入中...";
                 try {
-                    const json = JSON.parse(e.target.result);
-                    // 簡單檢查 JSON 結構是否包含預期欄位
-                    if (!json.admissions && !json.general) throw new Error("JSON 缺少必要欄位 (admissions, general...)");
+                    await setDoc(doc(db, "settings", "knowledge_json"), {
+                        content: fileContent,
+                        updatedAt: new Date().toISOString(),
+                        updatedBy: currentUser.email
+                    });
                     
-                    fileContent = JSON.stringify(json);
-                    uploadStatus.textContent = `✅ JSON 格式正確 (${file.size} bytes)`;
-                    uploadStatus.className = "text-center text-sm font-medium text-green-600";
-                } catch (err) {
-                    uploadStatus.textContent = `❌ JSON 錯誤: ${err.message}`;
-                    uploadStatus.className = "text-center text-sm font-medium text-red-500";
-                    fileContent = "";
-                }
-            };
-            reader.readAsText(file);
-        });
-
-        // ★★★ 核心修正：寫入後立即驗證 ★★★
-        document.getElementById('saveKnowledgeBtn').addEventListener('click', async () => {
-            if (!fileContent) return alert("請先選擇有效的 JSON 檔案");
-            
-            const btn = document.getElementById('saveKnowledgeBtn');
-            btn.disabled = true;
-            btn.textContent = "寫入資料庫中...";
-            uploadStatus.textContent = "⏳ 正在上傳至 Firestore...";
-            uploadStatus.className = "text-center text-sm font-medium text-blue-600";
-
-            try {
-                // 1. 寫入
-                await setDoc(doc(db, "settings", "knowledge_json"), {
-                    content: fileContent,
-                    updatedAt: new Date().toISOString(),
-                    updatedBy: currentUser.email
-                });
-                console.log("寫入成功，開始驗證...");
-
-                // 2. 立即讀回驗證
-                const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
-                if (docSnap.exists()) {
-                    const data = JSON.parse(docSnap.data().content);
-                    const keys = Object.keys(data);
-                    
-                    uploadStatus.textContent = `🎉 成功！已寫入並驗證。包含類別: ${keys.join(", ")}`;
-                    uploadStatus.className = "text-center text-sm font-medium text-green-600";
-                    
-                    // 更新本地變數，不用刷新網頁
-                    knowledgeData = data;
-                    statusLabel.textContent = `知識庫就緒 (v2.0, ${keys.length} 類)`;
-                    
-                    setTimeout(() => {
+                    // 立即讀回驗證
+                    const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
+                    if (docSnap.exists()) {
+                        knowledgeData = JSON.parse(docSnap.data().content);
+                        alert("🎉 更新成功！知識庫已重新載入。");
                         adminModal.classList.add('hidden');
-                        btn.disabled = false;
-                        btn.textContent = "更新知識庫";
-                    }, 2000);
-                } else {
-                    throw new Error("寫入看似成功，但讀回時找不到文件 (Ghost Write)");
+                    }
+                } catch (e) {
+                    alert(`❌ 更新失敗: ${e.message}`);
+                } finally {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = "更新知識庫";
                 }
+            });
 
-            } catch (e) {
-                console.error("上傳失敗詳細錯誤:", e);
-                let errorMsg = e.message;
-                if (e.code === 'permission-denied') {
-                    errorMsg = "權限不足！請檢查 Firestore Rules 或登入帳號。";
+            // 初始載入
+            async function loadKnowledge() {
+                try {
+                    const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
+                    if (docSnap.exists()) {
+                        knowledgeData = JSON.parse(docSnap.data().content);
+                        statusLabel.textContent = "知識庫已就緒";
+                        console.log("Knowledge Keys:", Object.keys(knowledgeData));
+                    }
+                } catch (e) {
+                    console.error(e);
+                    statusLabel.textContent = "讀取失敗";
                 }
-                uploadStatus.textContent = `❌ 上傳失敗: ${errorMsg}`;
-                uploadStatus.className = "text-center text-sm font-medium text-red-500";
-                btn.disabled = false;
-                btn.textContent = "重試";
             }
+            loadKnowledge();
+
+            // AI 邏輯 (修正 URL)
+            async function callGemini(question) {
+                if (!knowledgeData) return "抱歉，知識庫尚未準備好。";
+
+                // ★★★ 改用最穩定的 gemini-pro 模型 ★★★
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+                
+                statusLabel.textContent = "AI 正在思考...";
+
+                // 簡化流程：先直接問，若效果不好再加 Router (為了先排除 404 問題)
+                // 這裡我們直接把最相關的幾個類別合併送出，避免 Router 失敗
+                const contextData = (knowledgeData.admissions || "") + "\n" + (knowledgeData.curriculum || "") + "\n" + (knowledgeData.performance || "");
+                
+                const prompt = `
+                    你現在是「小清華原住民實驗教育班」的招生行政老師。
+                    請根據以下資料回答問題。若資料中沒有答案，請誠實告知。
+                    
+                    【參考資料】：
+                    ${contextData.substring(0, 30000)} ...
+
+                    【回答規則】：
+                    1. 語氣親切，使用繁體中文。
+                    2. 姓名去識別化 (陳○明)。
+
+                    User: ${question}
+                `;
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+                    
+                    if (!response.ok) {
+                        const errData = await response.json();
+                        throw new Error(errData.error.message);
+                    }
+
+                    const data = await response.json();
+                    statusLabel.textContent = "回覆完成";
+                    return data.candidates[0].content.parts[0].text;
+                } catch (e) {
+                    console.error(e);
+                    return `抱歉，AI 發生錯誤: ${e.message}`;
+                }
+            }
+
+            // Chat UI
+            function appendMessage(role, text) {
+                const isAI = role === 'ai';
+                const div = document.createElement('div');
+                div.className = `flex items-start gap-2.5 ${isAI ? '' : 'flex-row-reverse'}`;
+                const avatar = isAI ? `<div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div>` : `<div class="w-8 h-8 bg-gray-200 rounded-full flex-shrink-0 flex items-center justify-center text-gray-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
+                const formattedText = isAI ? marked.parse(text) : text;
+                div.innerHTML = `${avatar}<div class="flex flex-col gap-1 w-full max-w-[85%]"><div class="flex flex-col leading-1.5 p-3.5 border-gray-200 ${isAI ? 'bg-white rounded-e-xl rounded-es-xl' : 'bg-green-100 rounded-s-xl rounded-ee-xl'} shadow-sm"><div class="text-sm font-normal text-gray-900 prose prose-sm max-w-none ${isAI ? '' : 'text-gray-800'}">${formattedText}</div></div></div>`;
+                chatContainer.appendChild(div);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            async function handleSend() {
+                const text = userInput.value.trim();
+                if (!text) return;
+                userInput.value = '';
+                appendMessage('user', text);
+                const response = await callGemini(text);
+                appendMessage('ai', response);
+            }
+
+            sendBtn.addEventListener('click', handleSend);
+            userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
         });
-
-        // 初始載入
-        async function loadKnowledge() {
-            statusLabel.textContent = "正在連線資料庫...";
-            try {
-                const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
-                if (docSnap.exists()) {
-                    knowledgeData = JSON.parse(docSnap.data().content);
-                    statusLabel.textContent = "知識庫已載入";
-                    console.log("Initial Load Success:", Object.keys(knowledgeData));
-                } else {
-                    statusLabel.textContent = "⚠️ 資料庫是空的，請進後台上傳";
-                    console.warn("Firestore 'settings/knowledge_json' not found.");
-                }
-            } catch (e) {
-                console.error("Load Error:", e);
-                statusLabel.textContent = "連線失敗 (請看 Console)";
-            }
-        }
-        loadKnowledge();
-
-        // AI 邏輯 (保持不變)
-        async function callGemini(question) {
-            if (!knowledgeData) return "抱歉，知識庫尚未準備好，請管理員先上傳資料。";
-
-            // 使用最新的 Flash 模型
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-            
-            statusLabel.textContent = "AI 正在分類問題...";
-            
-            // ... (AI Router 邏輯同上，省略以節省篇幅) ...
-             const routerPrompt = `
-                你是分類員。請判斷使用者的問題屬於下列哪一類，只回答類別代碼 (admissions, curriculum, performance, general)。不要多餘文字。
-                
-                類別定義：
-                - admissions: 招生、報名、簡章、日期、資格、加分
-                - curriculum: 課程、住宿、族語、社團、返鄉服務
-                - performance: 升學、榜單、校友、就業、得獎
-                - general: 學校介紹、交通、其他無法歸類
-
-                User Question: ${question}
-            `;
-
-            let category = "general";
-            try {
-                const routerRes = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: routerPrompt }] }] })
-                });
-                const routerJson = await routerRes.json();
-                let rawCat = routerJson.candidates[0].content.parts[0].text.trim().toLowerCase();
-                
-                if (rawCat.includes("admissions")) category = "admissions";
-                else if (rawCat.includes("curriculum")) category = "curriculum";
-                else if (rawCat.includes("performance")) category = "performance";
-                
-                console.log(`Router Decision: ${category}`);
-            } catch (e) {
-                console.warn("Router failed, fallback to general", e);
-            }
-
-            statusLabel.textContent = `AI 正在查詢 [${category}] 資料庫...`;
-            const contextData = knowledgeData[category] || knowledgeData['general'] || "";
-
-            const answerPrompt = `
-                你現在是「小清華原住民實驗教育班」的招生行政老師。
-                請根據提供的【資料片段】回答問題。
-
-                【資料片段 (${category})】：
-                ${contextData.substring(0, 30000)} ... (資料結束)
-
-                【回答規則】:
-                1. 語氣親切專業，使用繁體中文。
-                2. 僅根據資料回答，若無資訊請誠實告知並建議聯繫辦公室 (08-7937493 分機 602-604)。
-                3. 姓名去識別化 (陳○明)。
-
-                User Question: ${question}
-            `;
-
-            try {
-                const answerRes = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: answerPrompt }] }] })
-                });
-                const answerJson = await answerRes.json();
-                statusLabel.textContent = "回覆完成";
-                return answerJson.candidates[0].content.parts[0].text;
-            } catch (e) {
-                console.error(e);
-                return "抱歉，AI 暫時無法回應，請稍後再試。";
-            }
-        }
-
-        // Chat UI (保持不變)
-        function appendMessage(role, text) {
-            const isAI = role === 'ai';
-            const div = document.createElement('div');
-            div.className = `flex items-start gap-2.5 ${isAI ? '' : 'flex-row-reverse'}`;
-            const avatar = isAI ? `<div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div>` : `<div class="w-8 h-8 bg-gray-200 rounded-full flex-shrink-0 flex items-center justify-center text-gray-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
-            const formattedText = isAI ? marked.parse(text) : text;
-            div.innerHTML = `${avatar}<div class="flex flex-col gap-1 w-full max-w-[85%]"><div class="flex flex-col leading-1.5 p-3.5 border-gray-200 ${isAI ? 'bg-white rounded-e-xl rounded-es-xl' : 'bg-green-100 rounded-s-xl rounded-ee-xl'} shadow-sm"><div class="text-sm font-normal text-gray-900 prose prose-sm max-w-none ${isAI ? '' : 'text-gray-800'}">${formattedText}</div></div></div>`;
-            chatContainer.appendChild(div);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-        function showTyping() { const div = document.createElement('div'); div.id = 'typingIndicator'; div.className = 'flex items-start gap-2.5'; div.innerHTML = `<div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div><div class="flex flex-col gap-1"><div class="flex items-center space-x-1 p-4 bg-white rounded-e-xl rounded-es-xl shadow-sm h-10"><div class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full"></div><div class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full"></div><div class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full"></div></div></div>`; chatContainer.appendChild(div); chatContainer.scrollTop = chatContainer.scrollHeight; }
-        async function handleSend() { const text = userInput.value.trim(); if (!text) return; userInput.value = ''; appendMessage('user', text); showTyping(); const response = await callGemini(text); document.getElementById('typingIndicator')?.remove(); appendMessage('ai', response); }
-        document.getElementById('sendBtn').addEventListener('click', handleSend);
-        document.getElementById('userInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
-
     </script>
 </body>
 </html>
