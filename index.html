@@ -96,15 +96,16 @@
         </div>
     </div>
 
-    <!-- SDKs -->
+   <!-- SDKs -->
     <script type="module">
+        // 1. 引入 initializeFirestore
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-		import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-		import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, initializeFirestore } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // ================= 配置區域 =================
         const firebaseConfig = {
-            apiKey: "AIzaSyDdj_LLuF4SpgfEoMCDDdFEZpD0hZEj9YA",
+             apiKey: "AIzaSyDdj_LLuF4SpgfEoMCDDdFEZpD0hZEj9YA",
             authDomain: "ppsh-tsinghua-ai.firebaseapp.com",
             projectId: "ppsh-tsinghua-ai",
             storageBucket: "ppsh-tsinghua-ai.firebasestorage.app",
@@ -118,203 +119,187 @@
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
-        const db = getFirestore(app);
+        
+        // 2. ★★★ 關鍵修正：強制使用 Long Polling 穿透防火牆 ★★★
+        const db = initializeFirestore(app, {
+            experimentalForceLongPolling: true,
+        });
+
         const provider = new GoogleAuthProvider();
 
         let knowledgeData = null;
         let currentUser = null;
         let fileContent = "";
 
-        // UI 元素
-        const loginBtn = document.getElementById('loginBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const adminBtn = document.getElementById('adminBtn');
-        const chatContainer = document.getElementById('chatContainer');
-        const statusLabel = document.getElementById('systemStatus');
-        const uploadStatus = document.getElementById('uploadStatus');
-        const adminModal = document.getElementById('adminModal');
-        const saveBtn = document.getElementById('saveKnowledgeBtn');
+        // UI Elements
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginBtn = document.getElementById('loginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const adminBtn = document.getElementById('adminBtn');
+            const chatContainer = document.getElementById('chatContainer');
+            const statusLabel = document.getElementById('systemStatus');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const saveBtn = document.getElementById('saveKnowledgeBtn');
+            const fileInput = document.getElementById('fileInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const userInput = document.getElementById('userInput');
+            const adminModal = document.getElementById('adminModal');
+            const closeAdminBtn = document.getElementById('closeAdminBtn');
 
-        // 1. 登入邏輯
-        loginBtn.addEventListener('click', () => signInWithPopup(auth, provider));
-        logoutBtn.addEventListener('click', () => signOut(auth));
-        
-        onAuthStateChanged(auth, (user) => {
-            currentUser = user;
-            if (user) {
-                loginBtn.classList.add('hidden');
-                logoutBtn.classList.remove('hidden');
-                if (user.email === ADMIN_EMAIL) {
-                    adminBtn.classList.remove('hidden');
-                }
-            } else {
-                loginBtn.classList.remove('hidden');
-                logoutBtn.classList.add('hidden');
-                adminBtn.classList.add('hidden');
-            }
-        });
-
-        // 2. 後台管理 (修正 DOM 讀取問題)
-        adminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
-        document.getElementById('closeAdminBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
-
-        document.getElementById('fileInput').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const json = JSON.parse(e.target.result);
-                    // 驗證基本欄位
-                    if(!json.admissions) throw new Error("缺少 admissions 類別");
-                    
-                    fileContent = JSON.stringify(json);
-                    uploadStatus.textContent = `✅ JSON 驗證成功 (${file.size} bytes)`;
-                    uploadStatus.className = "text-center text-sm font-medium text-green-600";
-                } catch (err) {
-                    uploadStatus.textContent = `❌ JSON 錯誤: ${err.message}`;
-                    uploadStatus.className = "text-center text-sm font-medium text-red-500";
-                    fileContent = "";
-                }
-            };
-            reader.readAsText(file);
-        });
-
-        saveBtn.addEventListener('click', async () => {
-            if (!fileContent) return alert("請先選擇有效的 JSON 檔案");
+            // 登入邏輯
+            loginBtn.addEventListener('click', () => signInWithPopup(auth, provider));
+            logoutBtn.addEventListener('click', () => signOut(auth));
             
-            saveBtn.disabled = true;
-            saveBtn.textContent = "寫入中...";
-            uploadStatus.textContent = "⏳ 正在寫入 Firestore...";
-            
-            try {
-                // 寫入資料
-                await setDoc(doc(db, "settings", "knowledge_json"), {
-                    content: fileContent,
-                    updatedAt: new Date().toISOString(),
-                    updatedBy: currentUser.email
-                });
-                
-                // 立即驗證
-                const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
-                if (docSnap.exists()) {
-                    const data = JSON.parse(docSnap.data().content);
-                    knowledgeData = data; // 更新本地快取
-                    
-                    uploadStatus.textContent = `🎉 成功！知識庫已更新。`;
-                    uploadStatus.className = "text-center text-sm font-medium text-green-600";
-                    statusLabel.textContent = "知識庫已就緒 (v2.1)";
-                    
-                    setTimeout(() => {
-                        adminModal.classList.add('hidden');
-                        saveBtn.disabled = false;
-                        saveBtn.textContent = "更新知識庫";
-                        uploadStatus.textContent = "";
-                    }, 1500);
-                }
-            } catch (e) {
-                console.error("Upload Error:", e);
-                uploadStatus.textContent = `❌ 失敗: ${e.message}`;
-                uploadStatus.className = "text-center text-sm font-medium text-red-500";
-                saveBtn.disabled = false;
-                saveBtn.textContent = "重試";
-            }
-        });
-
-        // 3. 初始載入知識庫
-        async function loadKnowledge() {
-            statusLabel.textContent = "正在連線...";
-            try {
-                const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
-                if (docSnap.exists()) {
-                    knowledgeData = JSON.parse(docSnap.data().content);
-                    statusLabel.textContent = "系統準備就緒";
-                    console.log("Loaded Keys:", Object.keys(knowledgeData));
+            onAuthStateChanged(auth, (user) => {
+                currentUser = user;
+                if (user) {
+                    loginBtn.classList.add('hidden');
+                    logoutBtn.classList.remove('hidden');
+                    if (user.email === ADMIN_EMAIL) adminBtn.classList.remove('hidden');
                 } else {
-                    statusLabel.textContent = "⚠️ 知識庫為空";
+                    loginBtn.classList.remove('hidden');
+                    logoutBtn.classList.add('hidden');
+                    adminBtn.classList.add('hidden');
                 }
-            } catch (e) {
-                console.error(e);
-                statusLabel.textContent = "連線失敗";
+            });
+
+            // 後台管理
+            adminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
+            closeAdminBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
+
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const json = JSON.parse(e.target.result);
+                        fileContent = JSON.stringify(json);
+                        uploadStatus.textContent = `✅ JSON 格式正確 (${file.size} bytes)`;
+                        uploadStatus.className = "text-center text-sm font-medium text-green-600";
+                    } catch (err) {
+                        uploadStatus.textContent = `❌ JSON 錯誤: ${err.message}`;
+                        uploadStatus.className = "text-center text-sm font-medium text-red-500";
+                    }
+                };
+                reader.readAsText(file);
+            });
+
+            saveBtn.addEventListener('click', async () => {
+                if (!fileContent) return alert("請先選擇有效的 JSON 檔案");
+                saveBtn.disabled = true;
+                saveBtn.textContent = "寫入中...";
+                try {
+                    await setDoc(doc(db, "settings", "knowledge_json"), {
+                        content: fileContent,
+                        updatedAt: new Date().toISOString(),
+                        updatedBy: currentUser.email
+                    });
+                    
+                    const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
+                    if (docSnap.exists()) {
+                        knowledgeData = JSON.parse(docSnap.data().content);
+                        alert("🎉 更新成功！知識庫已重新載入。");
+                        adminModal.classList.add('hidden');
+                    }
+                } catch (e) {
+                    console.error(e); // 讓您能在 Console 看到詳細錯誤
+                    alert(`❌ 更新失敗: ${e.message}`);
+                } finally {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = "更新知識庫";
+                }
+            });
+
+            // 初始載入
+            async function loadKnowledge() {
+                try {
+                    const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
+                    if (docSnap.exists()) {
+                        knowledgeData = JSON.parse(docSnap.data().content);
+                        statusLabel.textContent = "知識庫已就緒";
+                        console.log("Knowledge Keys:", Object.keys(knowledgeData));
+                    } else {
+                        statusLabel.textContent = "⚠️ 知識庫為空";
+                    }
+                } catch (e) {
+                    console.error("Load Error:", e);
+                    statusLabel.textContent = "連線失敗";
+                }
             }
-        }
-        loadKnowledge();
+            loadKnowledge();
 
-        // 4. AI 邏輯 (修正模型版本)
-        async function callGemini(question) {
-            if (!knowledgeData) return "抱歉，知識庫尚未準備好。";
+            // AI 邏輯
+            async function callGemini(question) {
+                if (!knowledgeData) return "抱歉，知識庫尚未準備好。";
 
-            // ★ 修正：使用 gemini-1.5-flash (目前沒有 2.5)
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-            
-            statusLabel.textContent = "AI 正在分類...";
+                // 使用 gemini-1.5-flash
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                
+                statusLabel.textContent = "AI 正在分類...";
 
-            // Router
-            const routerPrompt = `請判斷問題類別 (admissions, curriculum, performance, general)。User: ${question}`;
-            let category = "general";
-            
-            try {
-                const routerRes = await fetch(url, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: routerPrompt }] }] })
-                });
-                const routerJson = await routerRes.json();
-                const rawCat = routerJson.candidates[0].content.parts[0].text.toLowerCase();
-                if (rawCat.includes("admissions")) category = "admissions";
-                else if (rawCat.includes("curriculum")) category = "curriculum";
-                else if (rawCat.includes("performance")) category = "performance";
-            } catch (e) { console.warn("Router fail", e); }
+                const routerPrompt = `請判斷問題類別 (admissions, curriculum, performance, general)。User: ${question}`;
+                let category = "general";
+                
+                try {
+                    const routerRes = await fetch(url, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: routerPrompt }] }] })
+                    });
+                    const routerJson = await routerRes.json();
+                    const rawCat = routerJson.candidates[0].content.parts[0].text.toLowerCase();
+                    if (rawCat.includes("admissions")) category = "admissions";
+                    else if (rawCat.includes("curriculum")) category = "curriculum";
+                    else if (rawCat.includes("performance")) category = "performance";
+                } catch (e) { console.warn("Router fail", e); }
 
-            statusLabel.textContent = "AI 正在思考...";
-            const context = knowledgeData[category] || knowledgeData['general'] || "";
+                statusLabel.textContent = "AI 正在思考...";
+                const context = knowledgeData[category] || knowledgeData['general'] || "";
 
-            const answerPrompt = `
-                你是屏北小清華的招生老師。請根據資料回答問題。
-                資料：${context.substring(0, 30000)}...
-                問題：${question}
-                (繁體中文，姓名去識別化)
-            `;
+                const answerPrompt = `
+                    你現在是「小清華原住民實驗教育班」的招生行政老師。
+                    請根據資料回答問題。
+                    資料：${context.substring(0, 30000)}...
+                    問題：${question}
+                    (繁體中文，姓名去識別化)
+                `;
 
-            try {
-                const res = await fetch(url, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: answerPrompt }] }] })
-                });
-                const json = await res.json();
-                statusLabel.textContent = "回覆完成";
-                return json.candidates[0].content.parts[0].text;
-            } catch (e) {
-                return `錯誤: ${e.message}`;
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: answerPrompt }] }] })
+                    });
+                    const json = await res.json();
+                    statusLabel.textContent = "回覆完成";
+                    return json.candidates[0].content.parts[0].text;
+                } catch (e) {
+                    return `錯誤: ${e.message}`;
+                }
             }
-        }
 
-        // Chat UI
-        const sendBtn = document.getElementById('sendBtn');
-        const userInput = document.getElementById('userInput');
+            function appendMessage(role, text) {
+                const isAI = role === 'ai';
+                const div = document.createElement('div');
+                div.className = `flex items-start gap-2.5 ${isAI ? '' : 'flex-row-reverse'}`;
+                const avatar = isAI ? `<div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div>` : `<div class="w-8 h-8 bg-gray-200 rounded-full flex-shrink-0 flex items-center justify-center text-gray-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
+                const formattedText = isAI ? marked.parse(text) : text;
+                div.innerHTML = `${avatar}<div class="flex flex-col gap-1 w-full max-w-[85%]"><div class="flex flex-col leading-1.5 p-3.5 border-gray-200 ${isAI ? 'bg-white rounded-e-xl rounded-es-xl' : 'bg-green-100 rounded-s-xl rounded-ee-xl'} shadow-sm"><div class="text-sm font-normal text-gray-900 prose prose-sm max-w-none ${isAI ? '' : 'text-gray-800'}">${formattedText}</div></div></div>`;
+                chatContainer.appendChild(div);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
 
-        function appendMessage(role, text) {
-            const isAI = role === 'ai';
-            const div = document.createElement('div');
-            div.className = `flex items-start gap-2.5 ${isAI ? '' : 'flex-row-reverse'}`;
-            const avatar = isAI ? `<div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div>` : `<div class="w-8 h-8 bg-gray-200 rounded-full flex-shrink-0 flex items-center justify-center text-gray-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
-            const formattedText = isAI ? marked.parse(text) : text;
-            div.innerHTML = `${avatar}<div class="flex flex-col gap-1 w-full max-w-[85%]"><div class="flex flex-col leading-1.5 p-3.5 border-gray-200 ${isAI ? 'bg-white rounded-e-xl rounded-es-xl' : 'bg-green-100 rounded-s-xl rounded-ee-xl'} shadow-sm"><div class="text-sm font-normal text-gray-900 prose prose-sm max-w-none ${isAI ? '' : 'text-gray-800'}">${formattedText}</div></div></div>`;
-            chatContainer.appendChild(div);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
+            async function handleSend() {
+                const text = userInput.value.trim();
+                if (!text) return;
+                userInput.value = '';
+                appendMessage('user', text);
+                const response = await callGemini(text);
+                appendMessage('ai', response);
+            }
 
-        async function handleSend() {
-            const text = userInput.value.trim();
-            if (!text) return;
-            userInput.value = '';
-            appendMessage('user', text);
-            const response = await callGemini(text);
-            appendMessage('ai', response);
-        }
-
-        sendBtn.addEventListener('click', handleSend);
-        userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
-
+            sendBtn.addEventListener('click', handleSend);
+            userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
+        });
     </script>
 </body>
 </html>
