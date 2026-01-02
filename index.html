@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>小清華 AI 助手</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        /* 隱藏滾動條但保留功能 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        /* 打字機動畫 */
+        .typing-dot {
+            animation: typing 1.4s infinite ease-in-out both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-green-50 h-screen flex flex-col overflow-hidden">
+
+    <!-- 頂部導航欄 -->
+    <header class="bg-white shadow-sm px-4 py-3 flex justify-between items-center z-10 border-b border-green-100">
+        <div class="flex items-center gap-2">
+            <div class="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md">
+                <i class="fa-solid fa-leaf"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-gray-800 tracking-wide">小清華 AI 助手</h1>
+                <p class="text-xs text-green-600 font-medium">屏北原民班專屬諮詢</p>
+            </div>
+        </div>
+        <div class="flex gap-2">
+            <!-- 登入按鈕 -->
+            <button id="loginBtn" class="text-sm bg-white border border-green-500 text-green-600 px-3 py-1.5 rounded-full hover:bg-green-50 transition shadow-sm">
+                <i class="fa-brands fa-google mr-1"></i> 登入
+            </button>
+            <!-- 管理後台按鈕 (預設隱藏) -->
+            <button id="adminBtn" class="hidden text-sm bg-gray-800 text-white px-3 py-1.5 rounded-full hover:bg-gray-700 transition shadow-sm">
+                <i class="fa-solid fa-gear mr-1"></i> 後台
+            </button>
+            <!-- 登出按鈕 (預設隱藏) -->
+            <button id="logoutBtn" class="hidden text-sm bg-red-50 text-red-500 border border-red-200 px-3 py-1.5 rounded-full hover:bg-red-100 transition shadow-sm">
+                <i class="fa-solid fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- 聊天顯示區 -->
+    <main id="chatContainer" class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar scroll-smooth">
+        <!-- 歡迎訊息 -->
+        <div class="flex items-start gap-2.5">
+            <div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div>
+            <div class="flex flex-col gap-1 w-full max-w-[85%]">
+                <div class="flex items-center space-x-2 rtl:space-x-reverse">
+                    <span class="text-sm font-semibold text-gray-900">小清華助手</span>
+                    <span class="text-xs font-normal text-gray-500">剛剛</span>
+                </div>
+                <div class="flex flex-col leading-1.5 p-4 border-gray-200 bg-white rounded-e-xl rounded-es-xl shadow-sm">
+                    <p class="text-sm font-normal text-gray-900">Nga'ay ho！我是小清華原民班的 AI 助手。我可以回答關於招生、課程、住宿或校友表現的問題。請問有什麼我可以幫您的嗎？</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 底部輸入區 -->
+    <footer class="bg-white p-3 border-t border-gray-200 z-10 pb-safe">
+        <div class="relative flex items-center gap-2 max-w-4xl mx-auto">
+            <input type="text" id="userInput" 
+                class="flex-1 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-full focus:ring-green-500 focus:border-green-500 block w-full p-3 pl-4 shadow-sm outline-none transition" 
+                placeholder="請輸入您的問題..." autocomplete="off">
+            <button id="sendBtn" class="bg-green-600 hover:bg-green-700 text-white rounded-full p-3 w-10 h-10 flex items-center justify-center shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fa-solid fa-paper-plane text-sm"></i>
+            </button>
+        </div>
+        <p class="text-center text-[10px] text-gray-400 mt-2">AI 回答僅供參考，詳細資訊請以學校公告為準。</p>
+    </footer>
+
+    <!-- 管理後台 Modal -->
+    <div id="adminModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center px-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl transform transition-all scale-100">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800"><i class="fa-solid fa-database text-green-600 mr-2"></i>知識庫管理</h2>
+                <button id="closeAdminBtn" class="text-gray-400 hover:text-gray-600">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-4">
+                <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                    <p class="text-sm text-blue-800 mb-2">請上傳包含最新資訊的 .txt 檔案。系統將讀取內容並更新至資料庫。</p>
+                    <p class="text-xs text-blue-600">目前路徑: settings/knowledge</p>
+                </div>
+
+                <div class="flex items-center justify-center w-full">
+                    <label for="fileInput" class="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                            <i class="fa-solid fa-cloud-arrow-up text-3xl text-gray-400 mb-2"></i>
+                            <p class="text-sm text-gray-500"><span class="font-semibold">點擊上傳</span> .txt 檔案</p>
+                        </div>
+                        <input id="fileInput" type="file" class="hidden" accept=".txt" />
+                    </label>
+                </div>
+                
+                <div id="uploadStatus" class="hidden text-center text-sm font-medium"></div>
+
+                <button id="saveKnowledgeBtn" class="w-full text-white bg-green-600 hover:bg-green-700 font-medium rounded-lg text-sm px-5 py-2.5 text-center shadow-lg transition disabled:bg-gray-400">
+                    更新知識庫
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // ==========================================
+        // 1. 設定區域 (Configuration)
+        // ==========================================
+        
+        // TODO: 請貼上您的 Firebase Config
+        const firebaseConfig = {
+            apiKey: "YOUR_FIREBASE_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "SENDER_ID",
+            appId: "APP_ID"
+        };
+
+        // TODO: 請填入 Gemini API Key
+        const GEMINI_API_KEY = "AIzaSyADr8yWa5_Mgh7Omdvi9LCJ-9SRRq3DLPI"; 
+        
+        // 管理員 Email
+        const ADMIN_EMAIL = "fuwen@ppsh.ptc.edu.tw";
+
+        // ==========================================
+        // 2. 初始化 Firebase
+        // ==========================================
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+
+        // 變數存儲
+        let knowledgeBase = ""; // 儲存從 Firestore 讀取的知識
+        let currentUser = null;
+        let fileContent = "";   // 暫存上傳的檔案內容
+
+        // ==========================================
+        // 3. 邏輯處理 (Authentication & RBAC)
+        // ==========================================
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const adminBtn = document.getElementById('adminBtn');
+        const adminModal = document.getElementById('adminModal');
+        const closeAdminBtn = document.getElementById('closeAdminBtn');
+
+        // 登入
+        loginBtn.addEventListener('click', () => {
+            signInWithPopup(auth, provider).catch((error) => {
+                console.error("Login failed:", error);
+                alert("登入失敗: " + error.message);
+            });
+        });
+
+        // 登出
+        logoutBtn.addEventListener('click', () => {
+            signOut(auth).then(() => {
+                alert("已登出");
+            });
+        });
+
+        // 監聽登入狀態
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            if (user) {
+                loginBtn.classList.add('hidden');
+                logoutBtn.classList.remove('hidden');
+                
+                // 檢查是否為管理員
+                if (user.email === ADMIN_EMAIL) {
+                    adminBtn.classList.remove('hidden');
+                } else {
+                    adminBtn.classList.add('hidden');
+                }
+            } else {
+                loginBtn.classList.remove('hidden');
+                logoutBtn.classList.add('hidden');
+                adminBtn.classList.add('hidden');
+            }
+        });
+
+        // ==========================================
+        // 4. 知識庫管理 (Admin Panel)
+        // ==========================================
+        adminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
+        closeAdminBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
+
+        // 讀取檔案
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                fileContent = e.target.result;
+                const status = document.getElementById('uploadStatus');
+                status.textContent = `已讀取檔案: ${file.name} (${fileContent.length} 字)`;
+                status.classList.remove('hidden', 'text-red-500', 'text-green-500');
+                status.classList.add('text-blue-600');
+            };
+            reader.readAsText(file);
+        });
+
+        // 寫入 Firestore
+        document.getElementById('saveKnowledgeBtn').addEventListener('click', async () => {
+            if (!currentUser || currentUser.email !== ADMIN_EMAIL) {
+                alert("權限不足");
+                return;
+            }
+            if (!fileContent) {
+                alert("請先選擇檔案");
+                return;
+            }
+
+            const btn = document.getElementById('saveKnowledgeBtn');
+            const status = document.getElementById('uploadStatus');
+            btn.disabled = true;
+            btn.textContent = "更新中...";
+
+            try {
+                await setDoc(doc(db, "settings", "knowledge"), {
+                    content: fileContent,
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: currentUser.email
+                });
+                status.textContent = "✅ 知識庫更新成功！";
+                status.classList.remove('text-blue-600');
+                status.classList.add('text-green-600');
+                knowledgeBase = fileContent; // 即時更新本地變數
+                setTimeout(() => adminModal.classList.add('hidden'), 1500);
+            } catch (error) {
+                console.error("Write error:", error);
+                status.textContent = "❌ 更新失敗: " + error.message;
+                status.classList.remove('text-blue-600');
+                status.classList.add('text-red-500');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "更新知識庫";
+            }
+        });
+
+        // 應用程式啟動時讀取知識庫
+        async function loadKnowledge() {
+            try {
+                const docSnap = await getDoc(doc(db, "settings", "knowledge"));
+                if (docSnap.exists()) {
+                    knowledgeBase = docSnap.data().content;
+                    console.log("Knowledge loaded, length:", knowledgeBase.length);
+                } else {
+                    console.log("No knowledge found in Firestore");
+                }
+            } catch (error) {
+                console.error("Error loading knowledge:", error);
+            }
+        }
+        loadKnowledge();
+
+        // ==========================================
+        // 5. AI 對話邏輯 (Gemini Integration)
+        // ==========================================
+        const chatContainer = document.getElementById('chatContainer');
+        const userInput = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        // 姓名去識別化過濾器 (正則表達式)
+        // 規則：確保名字為 2 字以上時，頭尾保留，中間為 O
+        function shieldNames(text) {
+            // 策略：雖然 AI 會做處理，但前端做雙重保險
+            // 針對常見的 "姓+名" 格式 (2~4字)，如果 AI 輸出了完整名字，這裡嘗試遮蔽
+            // 注意：正則很難完美區分一般名詞與人名，所以這裡主要依賴 AI Prompt，
+            // 但如果發現特定模式 (例如 "同學" 前面的字)，可以加強。
+            // 這裡實作一個通用的替換邏輯，將文章中已經被標註為名字的格式標準化，
+            // 或者嘗試捕捉漏網之魚 (風險較高，故保守實作)。
+            
+            // 此處主要用來修飾 AI 可能產生不完美的遮蔽符號，統一為 '○'
+            return text.replace(/[〇XXXx*]/g, '○');
+        }
+
+        function appendMessage(role, text) {
+            const isAI = role === 'ai';
+            const div = document.createElement('div');
+            div.className = `flex items-start gap-2.5 ${isAI ? '' : 'flex-row-reverse'}`;
+            
+            const avatar = isAI 
+                ? `<div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div>`
+                : `<div class="w-8 h-8 bg-gray-200 rounded-full flex-shrink-0 flex items-center justify-center text-gray-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
+
+            // 處理 Markdown
+            const formattedText = isAI ? marked.parse(text) : text;
+            
+            // 姓名遮蔽處理 (針對 AI 回覆)
+            const safeText = isAI ? shieldNames(formattedText) : formattedText;
+
+            div.innerHTML = `
+                ${avatar}
+                <div class="flex flex-col gap-1 w-full max-w-[85%]">
+                    <div class="flex flex-col leading-1.5 p-3.5 border-gray-200 ${isAI ? 'bg-white rounded-e-xl rounded-es-xl' : 'bg-green-100 rounded-s-xl rounded-ee-xl'} shadow-sm">
+                        <div class="text-sm font-normal text-gray-900 prose prose-sm max-w-none ${isAI ? '' : 'text-gray-800'}">
+                            ${safeText}
+                        </div>
+                    </div>
+                </div>
+            `;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function showTyping() {
+            const div = document.createElement('div');
+            div.id = 'typingIndicator';
+            div.className = 'flex items-start gap-2.5';
+            div.innerHTML = `
+                <div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div>
+                <div class="flex flex-col gap-1">
+                    <div class="flex items-center space-x-1 p-4 bg-white rounded-e-xl rounded-es-xl shadow-sm h-10">
+                        <div class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full"></div>
+                        <div class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full"></div>
+                        <div class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full"></div>
+                    </div>
+                </div>
+            `;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function hideTyping() {
+            const indicator = document.getElementById('typingIndicator');
+            if (indicator) indicator.remove();
+        }
+
+        async function callGemini(question) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
+            
+            // 構建 Prompt
+            const systemInstruction = `
+                你現在是「小清華原住民實驗教育班」的招生行政老師。
+                你的任務是根據提供的【知識庫】回答問題。
+                
+                【知識庫內容】:
+                ${knowledgeBase || "目前沒有知識庫資料，請告知使用者暫時無法查詢。"}
+
+                【回答規則】:
+                1. 語氣：親切、專業、溫暖、具服務熱忱。使用繁體中文。
+                2. 依據：僅能根據知識庫回答。若知識庫無此資訊，請禮貌回答：「抱歉，目前資料庫中尚未記錄這部分的詳細資訊。」並顯示聯繫資訊。
+                3. 隱私保護 (極重要)：
+                   - 禁止輸出完整的學生姓名。
+                   - 姓名必須去識別化：保留第一個字與最後一個字，中間一律用「○」替代。
+                   - 範例：陳小明 -> 陳○明；瓦歷斯·貝林 -> 瓦○林。
+                   - 禁止揭露電話、住址、身分證號等個資。
+                4. 聯繫資訊：若無法回答或涉及隱私，請加上：「建議您直接致電小清華原民班辦公室聯繫，電話：08-7937493 分機 602、603、604。」
+                5. 排版：善用條列式、粗體，讓手機閱讀方便。
+
+                User Question: ${question}
+            `;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: systemInstruction }] }]
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error.message);
+                }
+
+                let aiResponse = data.candidates[0].content.parts[0].text;
+                
+                // 二次確保聯繫資訊在需要時出現 (簡單關鍵字判斷)
+                if (aiResponse.includes("無法") || aiResponse.includes("抱歉") || aiResponse.includes("不知道")) {
+                    if (!aiResponse.includes("08-7937493")) {
+                        aiResponse += "\n\n(若需進一步協助，請聯繫辦公室：08-7937493 分機 602-604)";
+                    }
+                }
+                
+                return aiResponse;
+
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                return "抱歉，目前系統忙碌中，請稍後再試，或直接致電辦公室：08-7937493 分機 602-604。";
+            }
+        }
+
+        // 處理發送
+        async function handleSend() {
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            userInput.value = '';
+            userInput.focus();
+            
+            appendMessage('user', text);
+            showTyping();
+
+            const response = await callGemini(text);
+            
+            hideTyping();
+            appendMessage('ai', response);
+        }
+
+        sendBtn.addEventListener('click', handleSend);
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleSend();
+        });
+
+    </script>
+</body>
+</html>
