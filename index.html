@@ -226,8 +226,8 @@
             async function callGemini(question) {
                 if (!knowledgeData) return "抱歉，知識庫尚未準備好。";
 
-                // ★★★ 改用最穩定的 gemini-pro 模型 ★★★
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+                // ★★★ 改用最穩定的 gemini模型 ★★★
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
                 
                 statusLabel.textContent = "AI 正在思考...";
 
