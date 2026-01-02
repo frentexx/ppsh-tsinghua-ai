@@ -33,7 +33,7 @@
             </div>
             <div>
                 <h1 class="text-lg font-bold text-gray-800 tracking-wide">小清華 AI 助手</h1>
-                <p class="text-xs text-green-600 font-medium">屏北原民班專屬諮詢 (v2.0)</p>
+                <p class="text-xs text-green-600 font-medium">屏北原民班專屬諮詢 (v2.1)</p>
             </div>
         </div>
         <div class="flex gap-2">
@@ -69,7 +69,7 @@
                 <i class="fa-solid fa-paper-plane text-sm"></i>
             </button>
         </div>
-        <p id="systemStatus" class="text-center text-[10px] text-gray-400 mt-2">系統準備就緒</p>
+        <p id="systemStatus" class="text-center text-[10px] text-gray-400 mt-2">系統載入中...</p>
     </footer>
 
     <!-- 後台 Modal -->
@@ -96,7 +96,7 @@
         </div>
     </div>
 
-<!-- SDKs -->
+    <!-- SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -104,14 +104,13 @@
 
         // ================= 配置區域 =================
         const firebaseConfig = {
-            // TODO: 請填入您真實的 Firebase Config
             apiKey: "AIzaSyDdj_LLuF4SpgfEoMCDDdFEZpD0hZEj9YA",
-			authDomain: "ppsh-tsinghua-ai.firebaseapp.com",
-			projectId: "ppsh-tsinghua-ai",
-			storageBucket: "ppsh-tsinghua-ai.firebasestorage.app",
-			messagingSenderId: "937217635366",
-			appId: "1:937217635366:web:bfb71d3822bd329df7a2e7",
-			measurementId: "G-8LFTJM0REX"
+            authDomain: "ppsh-tsinghua-ai.firebaseapp.com",
+            projectId: "ppsh-tsinghua-ai",
+            storageBucket: "ppsh-tsinghua-ai.firebasestorage.app",
+            messagingSenderId: "937217635366",
+            appId: "1:937217635366:web:bfb71d3822bd329df7a2e7",
+            measurementId: "G-8LFTJM0REX"
         };
         const GEMINI_API_KEY = "AIzaSyADr8yWa5_Mgh7Omdvi9LCJ-9SRRq3DLPI"; 
         const ADMIN_EMAIL = "fuwen@ppsh.ptc.edu.tw";
@@ -126,174 +125,196 @@
         let currentUser = null;
         let fileContent = "";
 
-        // UI Elements (等待 DOM 載入)
-        document.addEventListener('DOMContentLoaded', () => {
-            const loginBtn = document.getElementById('loginBtn');
-            const logoutBtn = document.getElementById('logoutBtn');
-            const adminBtn = document.getElementById('adminBtn');
-            const chatContainer = document.getElementById('chatContainer');
-            const statusLabel = document.getElementById('systemStatus');
-            const uploadStatus = document.getElementById('uploadStatus');
-            const saveBtn = document.getElementById('saveKnowledgeBtn');
-            const fileInput = document.getElementById('fileInput');
-            const sendBtn = document.getElementById('sendBtn');
-            const userInput = document.getElementById('userInput');
-            const adminModal = document.getElementById('adminModal');
-            const closeAdminBtn = document.getElementById('closeAdminBtn');
+        // UI 元素
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const adminBtn = document.getElementById('adminBtn');
+        const chatContainer = document.getElementById('chatContainer');
+        const statusLabel = document.getElementById('systemStatus');
+        const uploadStatus = document.getElementById('uploadStatus');
+        const adminModal = document.getElementById('adminModal');
+        const saveBtn = document.getElementById('saveKnowledgeBtn');
 
-            // 登入邏輯
-            loginBtn.addEventListener('click', () => signInWithPopup(auth, provider));
-            logoutBtn.addEventListener('click', () => signOut(auth));
-            
-            onAuthStateChanged(auth, (user) => {
-                currentUser = user;
-                if (user) {
-                    loginBtn.classList.add('hidden');
-                    logoutBtn.classList.remove('hidden');
-                    if (user.email === ADMIN_EMAIL) adminBtn.classList.remove('hidden');
-                } else {
-                    loginBtn.classList.remove('hidden');
-                    logoutBtn.classList.add('hidden');
-                    adminBtn.classList.add('hidden');
+        // 1. 登入邏輯
+        loginBtn.addEventListener('click', () => signInWithPopup(auth, provider));
+        logoutBtn.addEventListener('click', () => signOut(auth));
+        
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            if (user) {
+                loginBtn.classList.add('hidden');
+                logoutBtn.classList.remove('hidden');
+                if (user.email === ADMIN_EMAIL) {
+                    adminBtn.classList.remove('hidden');
                 }
-            });
-
-            // 後台管理
-            adminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
-            closeAdminBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
-
-            fileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const json = JSON.parse(e.target.result);
-                        fileContent = JSON.stringify(json);
-                        uploadStatus.textContent = `✅ JSON 格式正確 (${file.size} bytes)`;
-                        uploadStatus.className = "text-center text-sm font-medium text-green-600";
-                    } catch (err) {
-                        uploadStatus.textContent = `❌ JSON 錯誤: ${err.message}`;
-                        uploadStatus.className = "text-center text-sm font-medium text-red-500";
-                    }
-                };
-                reader.readAsText(file);
-            });
-
-            saveBtn.addEventListener('click', async () => {
-                if (!fileContent) return alert("請先選擇有效的 JSON 檔案");
-                saveBtn.disabled = true;
-                saveBtn.textContent = "寫入中...";
-                try {
-                    await setDoc(doc(db, "settings", "knowledge_json"), {
-                        content: fileContent,
-                        updatedAt: new Date().toISOString(),
-                        updatedBy: currentUser.email
-                    });
-                    
-                    // 立即讀回驗證
-                    const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
-                    if (docSnap.exists()) {
-                        knowledgeData = JSON.parse(docSnap.data().content);
-                        alert("🎉 更新成功！知識庫已重新載入。");
-                        adminModal.classList.add('hidden');
-                    }
-                } catch (e) {
-                    alert(`❌ 更新失敗: ${e.message}`);
-                } finally {
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = "更新知識庫";
-                }
-            });
-
-            // 初始載入
-            async function loadKnowledge() {
-                try {
-                    const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
-                    if (docSnap.exists()) {
-                        knowledgeData = JSON.parse(docSnap.data().content);
-                        statusLabel.textContent = "知識庫已就緒";
-                        console.log("Knowledge Keys:", Object.keys(knowledgeData));
-                    }
-                } catch (e) {
-                    console.error(e);
-                    statusLabel.textContent = "讀取失敗";
-                }
+            } else {
+                loginBtn.classList.remove('hidden');
+                logoutBtn.classList.add('hidden');
+                adminBtn.classList.add('hidden');
             }
-            loadKnowledge();
-
-            // AI 邏輯 (修正 URL)
-            async function callGemini(question) {
-                if (!knowledgeData) return "抱歉，知識庫尚未準備好。";
-
-                // ★★★ 改用最穩定的 gemini模型 ★★★
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-                
-                statusLabel.textContent = "AI 正在思考...";
-
-                // 簡化流程：先直接問，若效果不好再加 Router (為了先排除 404 問題)
-                // 這裡我們直接把最相關的幾個類別合併送出，避免 Router 失敗
-                const contextData = (knowledgeData.admissions || "") + "\n" + (knowledgeData.curriculum || "") + "\n" + (knowledgeData.performance || "");
-                
-                const prompt = `
-                    你現在是「小清華原住民實驗教育班」的招生行政老師。
-                    請根據以下資料回答問題。若資料中沒有答案，請誠實告知。
-                    
-                    【參考資料】：
-                    ${contextData.substring(0, 30000)} ...
-
-                    【回答規則】：
-                    1. 語氣親切，使用繁體中文。
-                    2. 姓名去識別化 (陳○明)。
-
-                    User: ${question}
-                `;
-
-                try {
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                    });
-                    
-                    if (!response.ok) {
-                        const errData = await response.json();
-                        throw new Error(errData.error.message);
-                    }
-
-                    const data = await response.json();
-                    statusLabel.textContent = "回覆完成";
-                    return data.candidates[0].content.parts[0].text;
-                } catch (e) {
-                    console.error(e);
-                    return `抱歉，AI 發生錯誤: ${e.message}`;
-                }
-            }
-
-            // Chat UI
-            function appendMessage(role, text) {
-                const isAI = role === 'ai';
-                const div = document.createElement('div');
-                div.className = `flex items-start gap-2.5 ${isAI ? '' : 'flex-row-reverse'}`;
-                const avatar = isAI ? `<div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div>` : `<div class="w-8 h-8 bg-gray-200 rounded-full flex-shrink-0 flex items-center justify-center text-gray-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
-                const formattedText = isAI ? marked.parse(text) : text;
-                div.innerHTML = `${avatar}<div class="flex flex-col gap-1 w-full max-w-[85%]"><div class="flex flex-col leading-1.5 p-3.5 border-gray-200 ${isAI ? 'bg-white rounded-e-xl rounded-es-xl' : 'bg-green-100 rounded-s-xl rounded-ee-xl'} shadow-sm"><div class="text-sm font-normal text-gray-900 prose prose-sm max-w-none ${isAI ? '' : 'text-gray-800'}">${formattedText}</div></div></div>`;
-                chatContainer.appendChild(div);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            }
-
-            async function handleSend() {
-                const text = userInput.value.trim();
-                if (!text) return;
-                userInput.value = '';
-                appendMessage('user', text);
-                const response = await callGemini(text);
-                appendMessage('ai', response);
-            }
-
-            sendBtn.addEventListener('click', handleSend);
-            userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
         });
+
+        // 2. 後台管理 (修正 DOM 讀取問題)
+        adminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
+        document.getElementById('closeAdminBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
+
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    // 驗證基本欄位
+                    if(!json.admissions) throw new Error("缺少 admissions 類別");
+                    
+                    fileContent = JSON.stringify(json);
+                    uploadStatus.textContent = `✅ JSON 驗證成功 (${file.size} bytes)`;
+                    uploadStatus.className = "text-center text-sm font-medium text-green-600";
+                } catch (err) {
+                    uploadStatus.textContent = `❌ JSON 錯誤: ${err.message}`;
+                    uploadStatus.className = "text-center text-sm font-medium text-red-500";
+                    fileContent = "";
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        saveBtn.addEventListener('click', async () => {
+            if (!fileContent) return alert("請先選擇有效的 JSON 檔案");
+            
+            saveBtn.disabled = true;
+            saveBtn.textContent = "寫入中...";
+            uploadStatus.textContent = "⏳ 正在寫入 Firestore...";
+            
+            try {
+                // 寫入資料
+                await setDoc(doc(db, "settings", "knowledge_json"), {
+                    content: fileContent,
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: currentUser.email
+                });
+                
+                // 立即驗證
+                const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
+                if (docSnap.exists()) {
+                    const data = JSON.parse(docSnap.data().content);
+                    knowledgeData = data; // 更新本地快取
+                    
+                    uploadStatus.textContent = `🎉 成功！知識庫已更新。`;
+                    uploadStatus.className = "text-center text-sm font-medium text-green-600";
+                    statusLabel.textContent = "知識庫已就緒 (v2.1)";
+                    
+                    setTimeout(() => {
+                        adminModal.classList.add('hidden');
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = "更新知識庫";
+                        uploadStatus.textContent = "";
+                    }, 1500);
+                }
+            } catch (e) {
+                console.error("Upload Error:", e);
+                uploadStatus.textContent = `❌ 失敗: ${e.message}`;
+                uploadStatus.className = "text-center text-sm font-medium text-red-500";
+                saveBtn.disabled = false;
+                saveBtn.textContent = "重試";
+            }
+        });
+
+        // 3. 初始載入知識庫
+        async function loadKnowledge() {
+            statusLabel.textContent = "正在連線...";
+            try {
+                const docSnap = await getDoc(doc(db, "settings", "knowledge_json"));
+                if (docSnap.exists()) {
+                    knowledgeData = JSON.parse(docSnap.data().content);
+                    statusLabel.textContent = "系統準備就緒";
+                    console.log("Loaded Keys:", Object.keys(knowledgeData));
+                } else {
+                    statusLabel.textContent = "⚠️ 知識庫為空";
+                }
+            } catch (e) {
+                console.error(e);
+                statusLabel.textContent = "連線失敗";
+            }
+        }
+        loadKnowledge();
+
+        // 4. AI 邏輯 (修正模型版本)
+        async function callGemini(question) {
+            if (!knowledgeData) return "抱歉，知識庫尚未準備好。";
+
+            // ★ 修正：使用 gemini-1.5-flash (目前沒有 2.5)
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+            
+            statusLabel.textContent = "AI 正在分類...";
+
+            // Router
+            const routerPrompt = `請判斷問題類別 (admissions, curriculum, performance, general)。User: ${question}`;
+            let category = "general";
+            
+            try {
+                const routerRes = await fetch(url, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: routerPrompt }] }] })
+                });
+                const routerJson = await routerRes.json();
+                const rawCat = routerJson.candidates[0].content.parts[0].text.toLowerCase();
+                if (rawCat.includes("admissions")) category = "admissions";
+                else if (rawCat.includes("curriculum")) category = "curriculum";
+                else if (rawCat.includes("performance")) category = "performance";
+            } catch (e) { console.warn("Router fail", e); }
+
+            statusLabel.textContent = "AI 正在思考...";
+            const context = knowledgeData[category] || knowledgeData['general'] || "";
+
+            const answerPrompt = `
+                你是屏北小清華的招生老師。請根據資料回答問題。
+                資料：${context.substring(0, 30000)}...
+                問題：${question}
+                (繁體中文，姓名去識別化)
+            `;
+
+            try {
+                const res = await fetch(url, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: answerPrompt }] }] })
+                });
+                const json = await res.json();
+                statusLabel.textContent = "回覆完成";
+                return json.candidates[0].content.parts[0].text;
+            } catch (e) {
+                return `錯誤: ${e.message}`;
+            }
+        }
+
+        // Chat UI
+        const sendBtn = document.getElementById('sendBtn');
+        const userInput = document.getElementById('userInput');
+
+        function appendMessage(role, text) {
+            const isAI = role === 'ai';
+            const div = document.createElement('div');
+            div.className = `flex items-start gap-2.5 ${isAI ? '' : 'flex-row-reverse'}`;
+            const avatar = isAI ? `<div class="w-8 h-8 bg-green-600 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs">AI</div>` : `<div class="w-8 h-8 bg-gray-200 rounded-full flex-shrink-0 flex items-center justify-center text-gray-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
+            const formattedText = isAI ? marked.parse(text) : text;
+            div.innerHTML = `${avatar}<div class="flex flex-col gap-1 w-full max-w-[85%]"><div class="flex flex-col leading-1.5 p-3.5 border-gray-200 ${isAI ? 'bg-white rounded-e-xl rounded-es-xl' : 'bg-green-100 rounded-s-xl rounded-ee-xl'} shadow-sm"><div class="text-sm font-normal text-gray-900 prose prose-sm max-w-none ${isAI ? '' : 'text-gray-800'}">${formattedText}</div></div></div>`;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function handleSend() {
+            const text = userInput.value.trim();
+            if (!text) return;
+            userInput.value = '';
+            appendMessage('user', text);
+            const response = await callGemini(text);
+            appendMessage('ai', response);
+        }
+
+        sendBtn.addEventListener('click', handleSend);
+        userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
+
     </script>
 </body>
 </html>
